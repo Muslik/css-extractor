@@ -1,6 +1,7 @@
-use std::{fs, env};
 use html_parser::Dom;
 use serde::Deserialize;
+use std::{env, fs};
+use anyhow::{Result, anyhow};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,7 +13,7 @@ struct Document {
 #[serde(untagged)]
 enum NodeType {
     Element(Node),
-    Text(String)
+    Text(String),
 }
 
 #[derive(Deserialize)]
@@ -22,25 +23,12 @@ struct Node {
     classes: Option<Vec<String>>,
 }
 
-fn parse_html_file(path: String) -> Result<String, &'static str> {
-    let html = match fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(err) => {
-            println!("{}", err);
-            return Err("Could not read file")
-        }
-    };
+fn parse_html_file(path: String) -> Result<String> {
+    let html = fs::read_to_string(path).map_err(|_| anyhow!("Could not read file"))?;
 
-    // parse the string into a DOM
-    let dom = match Dom::parse(&html) {
-        Ok(dom) => dom,
-        Err(_) => return Err("Could not parse HTML"),
-    };
+    let dom = Dom::parse(&html).map_err(|_| anyhow!("Could not parse HTML"))?;
 
-    match dom.to_json() {
-        Ok(json) => Ok(json),
-        Err(_) => Err("Could not convert DOM to JSON"),
-    }
+    dom.to_json().map_err(|_| anyhow!("Could not convert DOM to JSON"))
 }
 
 fn get_classnames_from_node(node: Node) -> Vec<String> {
@@ -58,8 +46,8 @@ fn get_classnames_from_node(node: Node) -> Vec<String> {
                 NodeType::Element(node) => {
                     let mut child_classnames = get_classnames_from_node(node);
                     classnames.append(&mut child_classnames);
-                },
-                NodeType::Text(_) => {},
+                }
+                NodeType::Text(_) => {}
             }
         }
     }
@@ -89,8 +77,8 @@ fn get_all_classnames_from_json(json: String) -> Vec<String> {
             NodeType::Element(node) => {
                 let mut child_classnames = get_classnames_from_node(node);
                 classnames.append(&mut child_classnames);
-            },
-            NodeType::Text(_) => {},
+            }
+            NodeType::Text(_) => {}
         }
     }
 
@@ -107,29 +95,23 @@ fn generate_css(classnames: Vec<String>) -> String {
     css
 }
 
-fn main() {
-    let mut args = env::args();
-    args.next();
+fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
 
-    let file_path = match args.next() {
-        Some(path) => path,
-        None => {
-            println!("No input file provided");
-            return;
-        }
-    };
+    if args.len() < 2 {
+        return Err(anyhow!("No input file provided"));
+    }
 
-    let json = match parse_html_file(file_path) {
-        Ok(json) => json,
-        Err(error) => {
-            println!("{}", error);
-            return;
-        }
-    };
-
+    let file_path = args[1].clone();
+    let json = parse_html_file(file_path)?;
     let classnames = get_all_classnames_from_json(json);
-
     let css = generate_css(classnames);
 
     println!("{css}");
+
+    Ok(())
 }
+
+
+
+
